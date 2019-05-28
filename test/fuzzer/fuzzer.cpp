@@ -116,15 +116,22 @@ static auto aleth = evmc::vm{evmc_create_interpreter()};
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
 {
+    if (data_size < 2)
+        return 0;
+
+
     auto msg = evmc_message{};
     msg.kind = EVMC_CALL;
-    msg.gas = 30000;
+    msg.gas = (data[0] << 8) | data[1];
+
+    auto code = &data[2];
+    auto code_size = data_size - 2;
 
     auto ctx1 = Host{};
     auto ctx2 = Host{};
 
-    auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, msg, data, data_size);
-    auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, msg, data, data_size);
+    auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, msg, code, code_size);
+    auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, msg, code, code_size);
 
     auto sc1 = r1.status_code;
     if (sc1 < 0)
