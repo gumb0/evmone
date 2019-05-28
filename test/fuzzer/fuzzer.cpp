@@ -21,7 +21,7 @@ static auto aleth = evmc::vm{evmc_create_interpreter()};
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
 {
-    if (data_size < 2)
+    if (data_size < 3)
         return 0;
 
 
@@ -29,8 +29,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     msg.kind = EVMC_CALL;
     msg.gas = (data[0] << 8) | data[1];
 
-    auto code = &data[2];
-    auto code_size = data_size - 2;
+    msg.input_size = data[2];
+    msg.input_data = &data[3];
+    if (data_size - 3 < msg.input_size)
+        return 0;
+
+    auto code = &data[3 + msg.input_size];
+    auto code_size = data_size - (3 + msg.input_size);
 
     auto ctx1 = MockedHost{};
     auto ctx2 = MockedHost{};
