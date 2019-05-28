@@ -9,9 +9,8 @@
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
 #include <algorithm>
+#include <optional>
 #include <iostream>
-#include <numeric>
-#include <unordered_map>
 
 extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 
@@ -19,29 +18,57 @@ extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 static auto evmone = evmc::vm{evmc_create_evmone()};
 static auto aleth = evmc::vm{evmc_create_interpreter()};
 
+
+
+struct evm_input
+{
+    evmc_revision rev;
+    evmc_message msg;
+};
+
+std::optional<evm_input> populate_input(const uint8_t*& data, size_t& data_size) noexcept
+{
+    constexpr auto required_size = 4;
+    if (data_size < required_size)
+        return {};
+
+    auto in = evm_input{};
+    auto rev_4bits = data[0] >> 4;
+    auto static_1bit = (data[0] >> 3) & 0b1;
+    auto depth_1bit = (data[0] >> 2) & 0b1;
+    auto gas_18bits = ((data[0] & 0b11) << 16) | (data[1] << 8) | data[2];  // Max 262143.
+    auto input_size_8bits = data[3];
+
+    data += required_size;
+    data_size -= required_size;
+
+    if (data_size < input_size_8bits)  // Not enough data for input.
+        return {};
+
+    in.rev = rev_4bits > EVMC_PETERSBURG ? EVMC_PETERSBURG : evmc_revision(rev_4bits);
+    in.msg.flags = static_1bit ? EVMC_STATIC : 0;
+    in.msg.depth = depth_1bit ? 0 : 1024;
+    in.msg.gas = gas_18bits;
+    in.msg.input_size = input_size_8bits;
+    in.msg.input_data = data;
+
+    data += in.msg.input_size;
+    data_size -= in.msg.input_size;
+
+    return in;
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
 {
-    if (data_size < 3)
+    auto in = populate_input(data, data_size);
+    if (!in)
         return 0;
-
-
-    auto msg = evmc_message{};
-    msg.kind = EVMC_CALL;
-    msg.gas = (data[0] << 8) | data[1];
-
-    msg.input_size = data[2];
-    msg.input_data = &data[3];
-    if (data_size - 3 < msg.input_size)
-        return 0;
-
-    auto code = &data[3 + msg.input_size];
-    auto code_size = data_size - (3 + msg.input_size);
 
     auto ctx1 = MockedHost{};
     auto ctx2 = MockedHost{};
 
-    auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, msg, code, code_size);
-    auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, msg, code, code_size);
+    auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, in->msg, data, data_size);
+    auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, in->msg, data, data_size);
 
     auto sc1 = r1.status_code;
     if (sc1 < 0)
