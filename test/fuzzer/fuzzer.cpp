@@ -28,18 +28,71 @@ struct evm_input
     evmc_message msg;
 };
 
+evmc_uint256be generate_interesting_value(uint8_t b) noexcept
+{
+    const auto s = (b >> 6) & 0b11;
+    const auto fill = (b >> 5) & 0b1;
+    const auto above = (b >> 4) & 0b1;
+    const auto val = b & 0b1111;
+
+    auto z = evmc_uint256be{};
+
+    const auto size = s == 0 ? 1 : 1 << (s + 2);
+
+    if (fill)
+    {
+        for (auto i = sizeof(z) - size; i < sizeof(z); ++i)
+            z.bytes[i] = 0xff;
+    }
+
+    if (above)
+        z.bytes[sizeof(z) - size % sizeof(z) - 1] ^= val;
+    else
+        z.bytes[sizeof(z) - size] ^= val << 4;
+
+    return z;
+}
+
+evmc_address generate_interesting_address(uint8_t b) noexcept
+{
+    const auto s = (b >> 6) & 0b11;
+    const auto fill = (b >> 5) & 0b1;
+    const auto above = (b >> 4) & 0b1;
+    const auto val = b & 0b1111;
+
+    auto z = evmc_address{};
+
+    const auto size = s == 3 ? 20 : 1 << s;
+
+    if (fill)
+    {
+        for (auto i = sizeof(z) - size; i < sizeof(z); ++i)
+            z.bytes[i] = 0xff;
+    }
+
+    if (above)
+        z.bytes[sizeof(z) - size % sizeof(z) - 1] ^= val;
+    else
+        z.bytes[sizeof(z) - size] ^= val << 4;
+
+    return z;
+}
+
 std::optional<evm_input> populate_input(const uint8_t*& data, size_t& data_size) noexcept
 {
-    constexpr auto required_size = 4;
+    constexpr auto required_size = 7;
     if (data_size < required_size)
         return {};
 
     auto in = evm_input{};
-    auto rev_4bits = data[0] >> 4;
-    auto static_1bit = (data[0] >> 3) & 0b1;
-    auto depth_1bit = (data[0] >> 2) & 0b1;
-    auto gas_18bits = ((data[0] & 0b11) << 16) | (data[1] << 8) | data[2];  // Max 262143.
-    auto input_size_8bits = data[3];
+    const auto rev_4bits = data[0] >> 4;
+    const auto static_1bit = (data[0] >> 3) & 0b1;
+    const auto depth_1bit = (data[0] >> 2) & 0b1;
+    const auto gas_18bits = ((data[0] & 0b11) << 16) | (data[1] << 8) | data[2];  // Max 262143.
+    const auto input_size_8bits = data[3];
+    const auto destination_8bits = data[4];
+    const auto sender_8bits = data[5];
+    const auto value_8bits = data[6];
 
     data += required_size;
     data_size -= required_size;
@@ -53,6 +106,9 @@ std::optional<evm_input> populate_input(const uint8_t*& data, size_t& data_size)
     in.msg.gas = gas_18bits;
     in.msg.input_size = input_size_8bits;
     in.msg.input_data = data;
+    in.msg.destination = generate_interesting_address(destination_8bits);
+    in.msg.sender = generate_interesting_address(sender_8bits);
+    in.msg.value = generate_interesting_value(value_8bits);
 
     data += in.msg.input_size;
     data_size -= in.msg.input_size;
