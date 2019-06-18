@@ -69,10 +69,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     auto ctx1 = MockedHost{};
     auto ctx2 = MockedHost{};
 
-    auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, in->msg, data, data_size);
+    auto r1 = evmone.execute(ctx1, in->rev, in->msg, data, data_size);
 
 #if ALETH
-    auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, in->msg, data, data_size);
+    auto r2 = aleth.execute(ctx2, in->rev, in->msg, data, data_size);
 
     auto sc1 = r1.status_code;
     if (sc1 < 0)
