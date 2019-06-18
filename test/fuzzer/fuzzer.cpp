@@ -16,8 +16,10 @@ extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 
 
 static auto evmone = evmc::vm{evmc_create_evmone()};
-static auto aleth = evmc::vm{evmc_create_interpreter()};
 
+#if ALETH
+static auto aleth = evmc::vm{evmc_create_interpreter()};
+#endif
 
 
 struct evm_input
@@ -68,6 +70,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     auto ctx2 = MockedHost{};
 
     auto r1 = evmone.execute(ctx1, EVMC_PETERSBURG, in->msg, data, data_size);
+
+#if ALETH
     auto r2 = aleth.execute(ctx2, EVMC_PETERSBURG, in->msg, data, data_size);
 
     auto sc1 = r1.status_code;
@@ -98,6 +102,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
 
     if (bytes_view{r1.output_data, r1.output_size} != bytes_view{r2.output_data, r2.output_size})
         __builtin_trap();
+#endif
 
     return 0;
 }
