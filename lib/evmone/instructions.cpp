@@ -712,9 +712,9 @@ void op_pop(execution_state& state, instr_argument) noexcept
     state.stack.pop_back();
 }
 
-void op_dup(execution_state& state, instr_argument arg) noexcept
+void op_dup(execution_state& state, instr_argument) noexcept
 {
-    state.stack.push_back(state.item(static_cast<size_t>(arg.p.number)));
+    state.stack.push_back(state.item(state.analysis->instrs[state.pc++].number));
 }
 
 void op_swap(execution_state& state, instr_argument arg) noexcept
