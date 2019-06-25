@@ -540,9 +540,9 @@ void op_jumpi(execution_state& state, instr_argument arg) noexcept
     state.stack.pop_back();
 }
 
-void op_pc(execution_state& state, instr_argument arg) noexcept
+void op_pc(execution_state& state, instr_argument) noexcept
 {
-    state.stack.emplace_back(arg.p.number);
+    state.stack.emplace_back(state.analysis->instrs[state.pc++].number);
 }
 
 void op_msize(execution_state& state, instr_argument) noexcept
