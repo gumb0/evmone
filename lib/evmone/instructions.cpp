@@ -717,9 +717,9 @@ void op_dup(execution_state& state, instr_argument) noexcept
     state.stack.push_back(state.item(state.analysis->instrs[state.pc++].number));
 }
 
-void op_swap(execution_state& state, instr_argument arg) noexcept
+void op_swap(execution_state& state, instr_argument) noexcept
 {
-    std::swap(state.item(0), state.item(static_cast<size_t>(arg.p.number)));
+    std::swap(state.item(0), state.item(state.analysis->instrs[state.pc++].number));
 }
 
 void op_log(execution_state& state, instr_argument arg) noexcept
