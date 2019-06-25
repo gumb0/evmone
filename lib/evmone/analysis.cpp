@@ -72,13 +72,15 @@ code_analysis analyze(
 
             // Create BEGINBLOCK instruction which either replaces JUMPDEST or is injected
             // in case there is no JUMPDEST.
-            auto& beginblock_instr = analysis.instrs.emplace_back(fns[OPX_BEGINBLOCK]);
-            beginblock_instr.arg.p.number = static_cast<int>(analysis.blocks.size() - 1);
+            analysis.instrs.emplace_back(fns[OPX_BEGINBLOCK]);
 
             if (jumpdest)  // Add the jumpdest to the map.
                 analysis.jumpdest_map.emplace_back(static_cast<int>(i), instr_index);
             else  // Increase instruction count because additional BEGINBLOCK was injected.
                 ++instr_index;
+
+            analysis.instrs.emplace_back(static_cast<int>(analysis.blocks.size() - 1));
+            ++instr_index;
         }
 
         auto& instr = jumpdest ? analysis.instrs.back() : analysis.instrs.emplace_back(fns[c]);
