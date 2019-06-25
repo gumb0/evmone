@@ -722,7 +722,7 @@ void op_swap(execution_state& state, instr_argument) noexcept
     std::swap(state.item(0), state.item(state.analysis->instrs[state.pc++].number));
 }
 
-void op_log(execution_state& state, instr_argument arg) noexcept
+void op_log(execution_state& state, instr_argument) noexcept
 {
     if (state.msg->flags & EVMC_STATIC)
         return state.exit(EVMC_STATIC_MODE_VIOLATION);
@@ -744,15 +744,15 @@ void op_log(execution_state& state, instr_argument arg) noexcept
     state.stack.pop_back();
 
     std::array<evmc_bytes32, 4> topics;
-    for (auto i = 0; i < arg.p.number; ++i)
+    const auto num_topics = state.analysis->instrs[state.pc++].number;
+    for (auto i = 0; i < num_topics; ++i)
     {
         intx::be::store(topics[i].bytes, state.item(0));
         state.stack.pop_back();
     }
 
     auto data = s != 0 ? &state.memory[o] : nullptr;
-    state.host.emit_log(
-        state.msg->destination, data, s, topics.data(), static_cast<size_t>(arg.p.number));
+    state.host.emit_log(state.msg->destination, data, s, topics.data(), size_t(num_topics));
 }
 
 void op_invalid(execution_state& state, instr_argument) noexcept
