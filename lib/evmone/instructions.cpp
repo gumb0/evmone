@@ -788,8 +788,9 @@ void op_revert(execution_state& state, instr_argument) noexcept
     state.output_size = static_cast<size_t>(size);
 }
 
-void op_call(execution_state& state, instr_argument arg) noexcept
+void op_call(execution_state& state, instr_argument) noexcept
 {
+    // TODO: Split CALL and CALLCODE by creating a template <call_kind>.
     auto gas = state.item(0);
 
     uint8_t data[32];
@@ -797,6 +798,7 @@ void op_call(execution_state& state, instr_argument arg) noexcept
     auto dst = evmc_address{};
     std::memcpy(dst.bytes, &data[12], sizeof(dst));
 
+    const auto params = state.analysis->instrs[state.pc++];
     auto value = state.item(2);
     auto input_offset = state.item(3);
     auto input_size = state.item(4);
@@ -817,25 +819,24 @@ void op_call(execution_state& state, instr_argument arg) noexcept
     if (!check_memory(state, output_offset, output_size))
         return;
 
-
     auto msg = evmc_message{};
-    msg.kind = arg.p.call_kind;
+    msg.kind = params.call_kind;
     msg.flags = state.msg->flags;
     intx::be::store(msg.value.bytes, value);
 
-    auto correction = state.current_block_cost - arg.p.number;
+    auto correction = state.current_block_cost - params.number;
     auto gas_left = state.gas_left + correction;
 
     auto cost = 0;
     auto has_value = value != 0;
     if (has_value)
     {
-        if (arg.p.call_kind == EVMC_CALL && state.msg->flags & EVMC_STATIC)
+        if (params.call_kind == EVMC_CALL && state.msg->flags & EVMC_STATIC)
             return state.exit(EVMC_STATIC_MODE_VIOLATION);
         cost += 9000;
     }
 
-    if (arg.p.call_kind == EVMC_CALL && (has_value || state.rev < EVMC_SPURIOUS_DRAGON))
+    if (params.call_kind == EVMC_CALL && (has_value || state.rev < EVMC_SPURIOUS_DRAGON))
     {
         if (!state.host.account_exists(dst))
             cost += 25000;
@@ -910,7 +911,7 @@ void op_call(execution_state& state, instr_argument arg) noexcept
         return state.exit(EVMC_OUT_OF_GAS);
 }
 
-void op_delegatecall(execution_state& state, instr_argument arg) noexcept
+void op_delegatecall(execution_state& state, instr_argument) noexcept
 {
     auto gas = state.item(0);
 
@@ -919,6 +920,7 @@ void op_delegatecall(execution_state& state, instr_argument arg) noexcept
     auto dst = evmc_address{};
     std::memcpy(dst.bytes, &data[12], sizeof(dst));
 
+    const auto params = state.analysis->instrs[state.pc++];
     auto input_offset = state.item(2);
     auto input_size = state.item(3);
     auto output_offset = state.item(4);
@@ -940,7 +942,7 @@ void op_delegatecall(execution_state& state, instr_argument arg) noexcept
     auto msg = evmc_message{};
     msg.kind = EVMC_DELEGATECALL;
 
-    auto correction = state.current_block_cost - arg.p.number;
+    auto correction = state.current_block_cost - params.number;
     auto gas_left = state.gas_left + correction;
 
     // TEST: Gas saturation for big gas values.
@@ -982,7 +984,7 @@ void op_delegatecall(execution_state& state, instr_argument arg) noexcept
         return state.exit(EVMC_OUT_OF_GAS);
 }
 
-void op_staticcall(execution_state& state, instr_argument arg) noexcept
+void op_staticcall(execution_state& state, instr_argument) noexcept
 {
     auto gas = state.item(0);
 
@@ -991,6 +993,7 @@ void op_staticcall(execution_state& state, instr_argument arg) noexcept
     auto dst = evmc_address{};
     std::memcpy(dst.bytes, &data[12], sizeof(dst));
 
+    const auto params = state.analysis->instrs[state.pc++];
     auto input_offset = state.item(2);
     auto input_size = state.item(3);
     auto output_offset = state.item(4);
@@ -1018,7 +1021,7 @@ void op_staticcall(execution_state& state, instr_argument arg) noexcept
 
     msg.depth = state.msg->depth + 1;
 
-    auto correction = state.current_block_cost - arg.p.number;
+    auto correction = state.current_block_cost - params.number;
     auto gas_left = state.gas_left + correction;
 
     msg.gas = std::numeric_limits<int64_t>::max();
@@ -1049,11 +1052,12 @@ void op_staticcall(execution_state& state, instr_argument arg) noexcept
         return state.exit(EVMC_OUT_OF_GAS);
 }
 
-void op_create(execution_state& state, instr_argument arg) noexcept
+void op_create(execution_state& state, instr_argument) noexcept
 {
     if (state.msg->flags & EVMC_STATIC)
         return state.exit(EVMC_STATIC_MODE_VIOLATION);
 
+    const auto params = state.analysis->instrs[state.pc++];
     auto endowment = state.item(0);
     auto init_code_offset = state.item(1);
     auto init_code_size = state.item(2);
@@ -1079,7 +1083,7 @@ void op_create(execution_state& state, instr_argument arg) noexcept
 
     auto msg = evmc_message{};
 
-    auto correction = state.current_block_cost - arg.p.number;
+    auto correction = state.current_block_cost - params.number;
     msg.gas = state.gas_left + correction;
     if (state.rev >= EVMC_TANGERINE_WHISTLE)
         msg.gas = msg.gas - msg.gas / 64;
@@ -1109,11 +1113,12 @@ void op_create(execution_state& state, instr_argument arg) noexcept
         return state.exit(EVMC_OUT_OF_GAS);
 }
 
-void op_create2(execution_state& state, instr_argument arg) noexcept
+void op_create2(execution_state& state, instr_argument) noexcept
 {
     if (state.msg->flags & EVMC_STATIC)
         return state.exit(EVMC_STATIC_MODE_VIOLATION);
 
+    const auto params = state.analysis->instrs[state.pc++];
     auto endowment = state.item(0);
     auto init_code_offset = state.item(1);
     auto init_code_size = state.item(2);
@@ -1146,7 +1151,7 @@ void op_create2(execution_state& state, instr_argument arg) noexcept
 
     auto msg = evmc_message{};
 
-    auto correction = state.current_block_cost - arg.p.number;
+    auto correction = state.current_block_cost - params.number;
     auto gas = state.gas_left + correction;
     msg.gas = gas - gas / 64;
 
