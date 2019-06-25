@@ -550,11 +550,11 @@ void op_msize(execution_state& state, instr_argument) noexcept
     state.stack.emplace_back(state.memory.size());
 }
 
-void op_gas(execution_state& state, instr_argument arg) noexcept
+void op_gas(execution_state& state, instr_argument) noexcept
 {
-    auto correction = state.current_block_cost - arg.p.number;
-    intx::uint256 gas = static_cast<uint64_t>(state.gas_left + correction);
-    state.stack.push_back(gas);
+    const auto correction = state.current_block_cost - state.analysis->instrs[state.pc++].number;
+    const auto gas = static_cast<uint64_t>(state.gas_left + correction);
+    state.stack.emplace_back(gas);
 }
 
 void op_gasprice(execution_state& state, instr_argument) noexcept
