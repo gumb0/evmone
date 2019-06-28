@@ -30,7 +30,7 @@ struct execution_state
     std::vector<uint256> stack;
 
     std::vector<uint8_t> memory;  // TODO: Use bytes.
-    int64_t memory_prev_cost = 0;
+    int64_t memory_cost = 0;
     size_t output_offset = 0;
     size_t output_size = 0;
 
