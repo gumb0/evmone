@@ -1,6 +1,7 @@
 # evmone: Fast Ethereum Virtual Machine implementation
 # Copyright 2019 The evmone Authors.
 # Licensed under the Apache License, Version 2.0.
+include(ExternalProject)
 
 get_target_property(type evmone TYPE)
 if(NOT type STREQUAL STATIC_LIBRARY)
@@ -17,16 +18,37 @@ add_executable(evmone-fuzzer fuzzer.cpp)
 target_link_libraries(evmone-fuzzer PRIVATE evmone testutils)
 
 if(NOT EVMONE_FUZZING_COVERAGE)
-    target_compile_definitions(evmone-fuzzer PRIVATE ALETH)
-    target_link_directories(
-        evmone-fuzzer PRIVATE
-        /home/chfast/Projects/ethereum/aleth/build/fuzzing/libaleth-interpreter
-        /home/chfast/Projects/ethereum/aleth/build/fuzzing/libdevcore
-        /home/chfast/Projects/ethereum/aleth/build/fuzzing/aleth
-        /home/chfast/Projects/ethereum/aleth/build/fuzzing/evmc/lib/instructions
+    ExternalProject_Add(
+        aleth-interpreter
+        PREFIX external
+        EXCLUDE_FROM_ALL TRUE
+
+        GIT_REPOSITORY https://github.com/ethereum/aleth
+        GIT_TAG aleth-interpreter-deps
+        GIT_SUBMODULES evmc cmake/cable
+        GIT_SHALLOW TRUE
+        UPDATE_DISCONNECTED TRUE
+
+        CMAKE_ARGS
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+            -DCMAKE_CXX_FLAGS=${fuzzing_flags}
+            -DCMAKE_C_FLAGS=${fuzzing_flags}
+
+        BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target aleth-interpreter
+        INSTALL_COMMAND ""
     )
-    target_link_libraries(evmone-fuzzer PRIVATE aleth-interpreter
-        devcore aleth-buildinfo evmc-instructions
-        /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libboost_filesystem-mt.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libboost_system-mt.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libboost_log-mt.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libboost_thread-mt.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libethash.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libleveldb.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libcrc32c.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/libsnappy.a /home/chfast/.hunter/_Base/c4cfcc0/a034897/5fe99df/Install/lib/librocksdb.a
-        )
+
+    set(build_dir ${CMAKE_CURRENT_BINARY_DIR}/external/src/aleth-interpreter-build)
+
+    add_library(aleth::interpreter IMPORTED STATIC)
+    add_dependencies(aleth::interpreter aleth-interpreter)
+    set_target_properties(aleth::interpreter PROPERTIES
+        IMPORTED_CONFIGURATIONS Release
+        IMPORTED_LOCATION_RELEASE ${build_dir}/libaleth-interpreter/libaleth-interpreter.a
+        INTERFACE_LINK_LIBRARIES ${build_dir}/aleth/libaleth-buildinfo.a)
+
+    target_link_libraries(evmone-fuzzer PRIVATE aleth::interpreter)
+    target_compile_definitions(evmone-fuzzer PRIVATE ALETH)
 endif()
