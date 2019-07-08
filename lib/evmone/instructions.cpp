@@ -10,6 +10,43 @@
 
 #include <cassert>
 
+
+namespace intx
+{
+namespace be
+{
+template <typename T, unsigned N>
+inline T store2(const intx::uint<N>& x) noexcept
+{
+    auto res = T{};
+    static_assert(sizeof(res.bytes) == sizeof(x), "wrong result type size");
+    store(res.bytes, x);
+    return res;
+}
+
+template <typename T, unsigned N>
+inline T trunc(const intx::uint<N>& x) noexcept
+{
+    auto res = T{};
+    constexpr auto res_size = sizeof(res.bytes);
+    constexpr auto x_size = sizeof(x);
+    static_assert(res_size < x_size, "wrong result type size");
+
+    uint8_t temp_storage[x_size];
+    store(temp_storage, x);
+    std::memcpy(res.bytes, &temp_storage[x_size - res_size], res_size);
+    return res;
+}
+
+template <typename T>
+inline typename intx::uint<sizeof(T{}.bytes) * 8> from(const T& t) noexcept
+{
+    return uint<sizeof(T{}.bytes) * 8>(t.bytes);
+}
+
+}  // namespace be
+}  // namespace intx
+
 namespace evmone
 {
 namespace
@@ -292,11 +329,9 @@ void op_address(execution_state& state, instr_argument) noexcept
 void op_balance(execution_state& state, instr_argument) noexcept
 {
     auto& x = state.stack.top();
-    uint8_t data[32];
-    intx::be::store(data, x);
-    evmc_address addr;
-    std::memcpy(addr.bytes, &data[12], sizeof(addr));
-    x = intx::be::uint256(state.host.get_balance(addr).bytes);
+
+    const auto addr = intx::be::trunc<evmc_address>(x);
+    x = intx::be::from(state.host.get_balance(addr));
 }
 
 void op_origin(execution_state& state, instr_argument) noexcept
