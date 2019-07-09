@@ -247,8 +247,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
             const auto& m2 = ctx2.recorded_calls[i];
 
             ASSERT_EQ(m1.kind, m2.kind);
-            // FIXME:
-            //            assert_eq(m1.depth, m2.depth);
+            assert_eq(m1.depth, m2.depth);
             ASSERT_EQ(m1.flags, m2.flags);
             ASSERT_EQ(m1.gas, m2.gas);
             ASSERT_EQ(m1.destination, m2.destination);

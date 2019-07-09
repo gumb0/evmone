@@ -24,7 +24,7 @@ if(NOT EVMONE_FUZZING_COVERAGE)
         EXCLUDE_FROM_ALL TRUE
 
         GIT_REPOSITORY https://github.com/ethereum/aleth
-        GIT_TAG aleth-interpreter-deps
+        GIT_TAG aleth-interpreter
         GIT_SUBMODULES evmc cmake/cable
         GIT_SHALLOW TRUE
         UPDATE_DISCONNECTED TRUE
