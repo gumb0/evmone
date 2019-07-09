@@ -161,6 +161,9 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     account.storage[storage_key2] = storage_key1;
     account.codehash = generate_interesting_value(account_codehash_8bit);
     account.code = {data, data_size};
+
+    // FIXME: Add call result. Reuse input for output.
+
     return in;
 }
 
