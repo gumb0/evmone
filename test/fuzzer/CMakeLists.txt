@@ -18,6 +18,9 @@ add_executable(evmone-fuzzer fuzzer.cpp)
 target_link_libraries(evmone-fuzzer PRIVATE evmone testutils)
 
 if(NOT EVMONE_FUZZING_COVERAGE)
+    # TODO: Aleth reports undefined behaviors, disable it for fuzzing.
+    string(REPLACE undefined "" aleth_fuzzing_flags ${fuzzing_flags})
+
     ExternalProject_Add(
         aleth-interpreter
         PREFIX external
@@ -33,8 +36,8 @@ if(NOT EVMONE_FUZZING_COVERAGE)
             -DCMAKE_BUILD_TYPE=Release
             -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
             -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-            -DCMAKE_CXX_FLAGS=${fuzzing_flags}
-            -DCMAKE_C_FLAGS=${fuzzing_flags}
+            -DCMAKE_CXX_FLAGS=${aleth_fuzzing_flags}
+            -DCMAKE_C_FLAGS=${aleth_fuzzing_flags}
 
         BUILD_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target aleth-interpreter
         INSTALL_COMMAND ""
