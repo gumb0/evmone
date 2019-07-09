@@ -9,8 +9,8 @@
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
 #include <algorithm>
-#include <optional>
 #include <iostream>
+#include <optional>
 
 extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 
@@ -20,6 +20,11 @@ static auto evmone = evmc::vm{evmc_create_evmone()};
 #if ALETH
 static auto aleth = evmc::vm{evmc_create_interpreter()};
 #endif
+
+
+class FuzzHost : public MockedHost
+{
+};
 
 
 struct evm_input
@@ -122,8 +127,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     if (!in)
         return 0;
 
-    auto ctx1 = MockedHost{};
-    auto ctx2 = MockedHost{};
+    auto ctx1 = FuzzHost{};
+    auto ctx2 = ctx1;
 
     auto r1 = evmone.execute(ctx1, in->rev, in->msg, data, data_size);
 
