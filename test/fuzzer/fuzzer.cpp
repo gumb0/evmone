@@ -11,6 +11,19 @@
 #include <algorithm>
 #include <iostream>
 #include <optional>
+template <typename T1, typename T2>
+[[clang::always_inline]] inline void assert_eq(const T1& a, const T2& b)
+{
+    if (!(a == b))
+    {
+        std::cerr << "Assertion failed: " << a << " != " << b << "\n";
+        __builtin_trap();
+    }
+}
+
+#define ASSERT_EQ(A, B) \
+    if (!((A) == (B)))  \
+    __builtin_trap()
 
 static auto print_input = std::getenv("PRINT");
 
@@ -156,6 +169,20 @@ auto hex(const evmc_address& addr) noexcept
     return to_hex({addr.bytes, sizeof(addr)});
 }
 
+bool operator==(const evmc_message& m1, const evmc_message& m2) noexcept
+{
+    return m1.kind == m2.kind && m1.destination == m2.destination && m1.sender == m2.sender &&
+           m1.gas == m2.gas && m1.flags == m2.flags && /* FIXME: m1.depth == m2.depth && */
+           m1.value == m2.value && m1.create2_salt == m2.create2_salt &&
+           bytes_view{m1.input_data, m1.input_size} == bytes_view{m2.input_data, m2.input_size};
+}
+
+bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& l2) noexcept
+{
+    return l1.address == l2.address && l1.data == l2.data &&
+           std::equal(l1.topics.begin(), l1.topics.end(), l2.topics.begin());
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
 {
     auto in = populate_input(data, data_size);
@@ -208,6 +235,37 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
 
     if (bytes_view{r1.output_data, r1.output_size} != bytes_view{r2.output_data, r2.output_size})
         __builtin_trap();
+
+    if (sc1 != EVMC_FAILURE)
+    {
+        if (ctx1.recorded_calls.size() != ctx2.recorded_calls.size())
+            __builtin_trap();
+
+        for (size_t i = 0; i < ctx1.recorded_calls.size(); ++i)
+        {
+            const auto& m1 = ctx1.recorded_calls[i];
+            const auto& m2 = ctx2.recorded_calls[i];
+
+            ASSERT_EQ(m1.kind, m2.kind);
+            // FIXME:
+            //            assert_eq(m1.depth, m2.depth);
+            ASSERT_EQ(m1.flags, m2.flags);
+            ASSERT_EQ(m1.gas, m2.gas);
+            ASSERT_EQ(m1.destination, m2.destination);
+            ASSERT_EQ(m1.sender, m2.sender);
+
+            if (!(ctx1.recorded_calls[i] == ctx2.recorded_calls[i]))
+            {
+                std::cerr << "recorded call [" << i << "]:\n";
+
+                __builtin_trap();
+            }
+        }
+
+        if (!std::equal(
+                ctx1.recorded_logs.begin(), ctx1.recorded_logs.end(), ctx2.recorded_logs.begin()))
+            __builtin_trap();
+    }
 #endif
 
     return 0;
