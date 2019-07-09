@@ -31,6 +31,7 @@ struct evm_input
 {
     evmc_revision rev;
     evmc_message msg;
+    bytes_view code;
 };
 
 evmc_uint256be generate_interesting_value(uint8_t b) noexcept
@@ -83,7 +84,7 @@ evmc_address generate_interesting_address(uint8_t b) noexcept
     return z;
 }
 
-std::optional<evm_input> populate_input(const uint8_t*& data, size_t& data_size) noexcept
+std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
 {
     constexpr auto required_size = 7;
     if (data_size < required_size)
@@ -118,6 +119,8 @@ std::optional<evm_input> populate_input(const uint8_t*& data, size_t& data_size)
     data += in.msg.input_size;
     data_size -= in.msg.input_size;
 
+    in.code = {data, data_size};
+
     return in;
 }
 
@@ -130,10 +133,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     auto ctx1 = FuzzHost{};
     auto ctx2 = ctx1;
 
-    auto r1 = evmone.execute(ctx1, in->rev, in->msg, data, data_size);
+    auto r1 = evmone.execute(ctx1, in->rev, in->msg, in->code.data(), in->code.size());
 
 #if ALETH
-    auto r2 = aleth.execute(ctx2, in->rev, in->msg, data, data_size);
+    auto r2 = aleth.execute(ctx2, in->rev, in->msg, in->code.data(), in->code.size());
 
     auto sc1 = r1.status_code;
     if (sc1 < 0)
