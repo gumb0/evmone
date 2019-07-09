@@ -12,6 +12,8 @@
 #include <iostream>
 #include <optional>
 
+static auto print_input = std::getenv("PRINT");
+
 extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 
 
@@ -31,7 +33,7 @@ struct evm_input
 {
     evmc_revision rev;
     evmc_message msg;
-    bytes_view code;
+    FuzzHost host;
 };
 
 evmc_uint256be generate_interesting_value(uint8_t b) noexcept
@@ -119,9 +121,39 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     data += in.msg.input_size;
     data_size -= in.msg.input_size;
 
-    in.code = {data, data_size};
+    constexpr auto host_required_size = 8;
+    if (data_size < host_required_size)
+        return {};
 
+    const auto gas_price_8bit = data[0];
+    const auto tx_origin_8bit = data[1];
+    const auto block_number_8bit = data[2];
+    const auto block_timestamp_8bit = data[3];
+    const auto account_balance_8bit = data[4];
+    const auto account_storage_key1_8bit = data[5];
+    const auto account_storage_key2_8bit = data[6];
+    const auto account_codehash_8bit = data[7];
+
+    in.host.tx_context.tx_gas_price = generate_interesting_value(gas_price_8bit);
+    in.host.tx_context.tx_origin = generate_interesting_address(tx_origin_8bit);
+    in.host.tx_context.block_number = block_number_8bit;        // TODO: Expand to 32 bits.
+    in.host.tx_context.block_timestamp = block_timestamp_8bit;  // TODO: Expand to 63 bits.
+
+    auto& account = in.host.accounts[in.msg.destination];
+    account.balance = generate_interesting_value(account_balance_8bit);
+    const auto storage_key1 = generate_interesting_value(account_storage_key1_8bit);
+    const auto storage_key2 = generate_interesting_value(account_storage_key2_8bit);
+    account.storage[{}] = storage_key2;
+    account.storage[storage_key1] = storage_key2;
+    account.storage[storage_key2] = storage_key1;
+    account.codehash = generate_interesting_value(account_codehash_8bit);
+    account.code = {data, data_size};
     return in;
+}
+
+auto hex(const evmc_address& addr) noexcept
+{
+    return to_hex({addr.bytes, sizeof(addr)});
 }
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
@@ -130,13 +162,23 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     if (!in)
         return 0;
 
-    auto ctx1 = FuzzHost{};
+    auto& ctx1 = in->host;
+    const auto& code = ctx1.accounts[in->msg.destination].code;
     auto ctx2 = ctx1;
 
-    auto r1 = evmone.execute(ctx1, in->rev, in->msg, in->code.data(), in->code.size());
+    if (print_input)
+    {
+        std::cout << "rev: " << int{in->rev} << "\n";
+        std::cout << "code: " << to_hex(code) << "\n";
+        std::cout << "input: " << to_hex({in->msg.input_data, in->msg.input_size}) << "\n";
+        std::cout << "account: " << hex(in->msg.destination) << "\n";
+        std::cout << "caller: " << hex(in->msg.sender) << "\n";
+    }
+
+    auto r1 = evmone.execute(ctx1, in->rev, in->msg, code.data(), code.size());
 
 #if ALETH
-    auto r2 = aleth.execute(ctx2, in->rev, in->msg, in->code.data(), in->code.size());
+    auto r2 = aleth.execute(ctx2, in->rev, in->msg, code.data(), code.size());
 
     auto sc1 = r1.status_code;
     if (sc1 < 0)
