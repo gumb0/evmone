@@ -9,32 +9,63 @@
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+
+
+std::ostream& operator<<(std::ostream& os, const evmc_address& addr)
+{
+    return os << to_hex({addr.bytes, sizeof(addr.bytes)});
+}
+
+std::ostream& operator<<(std::ostream& os, const evmc_bytes32& v)
+{
+    return os << to_hex({v.bytes, sizeof(v.bytes)});
+}
+
+std::ostream& operator<<(std::ostream& os, const bytes_view& v)
+{
+    return os << to_hex(v);
+}
+
+inline void assert_true(bool cond, const char* cond_str, const char* file, int line)
+{
+    if (!cond)
+    {
+        std::cerr << "ASSERTION FAILED: \"" << cond_str << "\"\n\tin " << file << ":" << line
+                  << std::endl;
+        __builtin_trap();
+    }
+}
+#define ASSERT(COND) assert_true(COND, #COND, __FILE__, __LINE__)
+
 template <typename T1, typename T2>
-[[clang::always_inline]] inline void assert_eq(const T1& a, const T2& b)
+[[clang::always_inline]] inline void assert_eq(
+    const T1& a, const T2& b, const char* a_str, const char* b_str, const char* file, int line)
 {
     if (!(a == b))
     {
-        std::cerr << "Assertion failed: " << a << " != " << b << "\n";
+        std::cerr << "ASSERTION FAILED: \"" << a_str << " == " << b_str << "\"\n\twith " << a
+                  << " != " << b << "\n\tin " << file << ":" << line << std::endl;
         __builtin_trap();
     }
 }
 
-#define ASSERT_EQ(A, B) \
-    if (!((A) == (B)))  \
-    __builtin_trap()
+#define ASSERT_EQ(A, B) assert_eq(A, B, #A, #B, __FILE__, __LINE__)
 
 static auto print_input = std::getenv("PRINT");
 
 extern "C" evmc_instance* evmc_create_interpreter() noexcept;
 
+/// The reference VM.
+static auto ref_vm = evmc::vm{evmc_create_evmone()};
 
-static auto evmone = evmc::vm{evmc_create_evmone()};
-
+static evmc::vm external_vms[] = {
 #if ALETH
-static auto aleth = evmc::vm{evmc_create_interpreter()};
+    evmc::vm{evmc_create_interpreter()},
 #endif
+};
 
 
 class FuzzHost : public MockedHost
@@ -146,6 +177,9 @@ inline int64_t expand_block_timestamp(uint8_t x) noexcept
 
 std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
 {
+    // TODO: Move constant bytes up front, the input buffer after.
+    //
+
     constexpr auto required_size = 7;
     if (data_size < required_size)
         return {};
@@ -238,6 +272,12 @@ bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& 
            std::equal(l1.topics.begin(), l1.topics.end(), l2.topics.begin());
 }
 
+evmc_status_code check_and_normalize(evmc_status_code status) noexcept
+{
+    ASSERT(status >= 0);
+    return status <= EVMC_REVERT ? status : EVMC_FAILURE;
+}
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noexcept
 {
     auto in = populate_input(data, data_size);
@@ -257,70 +297,54 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
         std::cout << "caller: " << hex(in->msg.sender) << "\n";
     }
 
-    auto r1 = evmone.execute(ctx1, in->rev, in->msg, code.data(), code.size());
+    const auto ref_res = ref_vm.execute(ctx1, in->rev, in->msg, code.data(), code.size());
+    const auto ref_status = check_and_normalize(ref_res.status_code);
 
-#if ALETH
-    auto r2 = aleth.execute(ctx2, in->rev, in->msg, code.data(), code.size());
-
-    auto sc1 = r1.status_code;
-    if (sc1 < 0)
-        __builtin_trap();
-    if (sc1 != EVMC_SUCCESS && sc1 != EVMC_REVERT)
-        sc1 = EVMC_FAILURE;
-
-    auto sc2 = r2.status_code;
-    if (sc2 < 0)
-        __builtin_trap();
-    if (sc2 != EVMC_SUCCESS && sc2 != EVMC_REVERT)
-        sc2 = EVMC_FAILURE;
-
-    if (sc1 != sc2)
+    for (auto& vm : external_vms)
     {
-        std::cerr << "status code: evmone:" << r1.status_code << " vs aleth:" << r2.status_code
-                  << "\n";
-        __builtin_trap();
-    }
+        const auto res = vm.execute(ctx2, in->rev, in->msg, code.data(), code.size());
 
-    if (r1.gas_left != r2.gas_left)
-    {
-        std::cerr << "status code: " << sc1 << "\n";
-        std::cerr << r1.gas_left << " vs " << r2.gas_left << "\n";
-        __builtin_trap();
-    }
+        const auto status = check_and_normalize(res.status_code);
+        ASSERT_EQ(status, ref_status);
+        ASSERT_EQ(res.gas_left, ref_res.gas_left);
+        ASSERT_EQ(bytes_view(res.output_data, res.output_size),
+            bytes_view(ref_res.output_data, ref_res.output_size));
 
-    if (bytes_view{r1.output_data, r1.output_size} != bytes_view{r2.output_data, r2.output_size})
-        __builtin_trap();
-
-    if (sc1 != EVMC_FAILURE)
-    {
-        if (ctx1.recorded_calls.size() != ctx2.recorded_calls.size())
-            __builtin_trap();
-
-        for (size_t i = 0; i < ctx1.recorded_calls.size(); ++i)
+        if (ref_status != EVMC_FAILURE)
         {
-            const auto& m1 = ctx1.recorded_calls[i];
-            const auto& m2 = ctx2.recorded_calls[i];
-
-            ASSERT_EQ(m1.kind, m2.kind);
-            assert_eq(m1.depth, m2.depth);
-            ASSERT_EQ(m1.flags, m2.flags);
-            ASSERT_EQ(m1.gas, m2.gas);
-            ASSERT_EQ(m1.destination, m2.destination);
-            ASSERT_EQ(m1.sender, m2.sender);
-
-            if (!(ctx1.recorded_calls[i] == ctx2.recorded_calls[i]))
-            {
-                std::cerr << "recorded call [" << i << "]:\n";
-
+            if (ctx1.recorded_calls.size() != ctx2.recorded_calls.size())
                 __builtin_trap();
-            }
-        }
 
-        if (!std::equal(
-                ctx1.recorded_logs.begin(), ctx1.recorded_logs.end(), ctx2.recorded_logs.begin()))
-            __builtin_trap();
+            for (size_t i = 0; i < ctx1.recorded_calls.size(); ++i)
+            {
+                const auto& m1 = ctx1.recorded_calls[i];
+                const auto& m2 = ctx2.recorded_calls[i];
+
+                // TODO: Finish calls inspection.
+                ASSERT_EQ(m1.kind, m2.kind);
+                ASSERT_EQ(m1.depth, m2.depth);
+                ASSERT_EQ(m1.flags, m2.flags);
+                ASSERT_EQ(m1.gas, m2.gas);
+                ASSERT_EQ(m1.destination, m2.destination);
+                ASSERT_EQ(m1.sender, m2.sender);
+
+                if (!(ctx1.recorded_calls[i] == ctx2.recorded_calls[i]))
+                {
+                    std::cerr << "recorded call [" << i << "]:\n";
+
+                    __builtin_trap();
+                }
+            }
+
+            if (!std::equal(ctx1.recorded_logs.begin(), ctx1.recorded_logs.end(),
+                    ctx2.recorded_logs.begin()))
+                __builtin_trap();
+
+            // TODO: Compare account access.
+            // TODO: Compare blockhash.
+            // TODO: Compare selfdestructs.
+        }
     }
-#endif
 
     return 0;
 }
