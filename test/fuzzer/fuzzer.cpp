@@ -253,14 +253,6 @@ inline auto hex(const evmc_address& addr) noexcept
     return to_hex({addr.bytes, sizeof(addr)});
 }
 
-inline bool operator==(const evmc_message& m1, const evmc_message& m2) noexcept
-{
-    return m1.kind == m2.kind && m1.destination == m2.destination && m1.sender == m2.sender &&
-           m1.gas == m2.gas && m1.flags == m2.flags && /* FIXME: m1.depth == m2.depth && */
-           m1.value == m2.value && m1.create2_salt == m2.create2_salt &&
-           bytes_view{m1.input_data, m1.input_size} == bytes_view{m2.input_data, m2.input_size};
-}
-
 inline bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& l2) noexcept
 {
     return l1.address == l2.address && l1.data == l2.data &&
@@ -279,9 +271,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     if (!in)
         return 0;
 
-    auto& ctx1 = in->host;
-    const auto& code = ctx1.accounts[in->msg.destination].code;
-    auto ctx2 = ctx1;
+    auto& ref_host = in->host;
+    const auto& code = ref_host.accounts[in->msg.destination].code;
+
+    auto host = ref_host;  // Copy Host.
 
     if (print_input)
     {
@@ -299,12 +292,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
         std::cout << "timestamp: " << in->host.tx_context.block_timestamp << "\n";
     }
 
-    const auto ref_res = ref_vm.execute(ctx1, in->rev, in->msg, code.data(), code.size());
+    const auto ref_res = ref_vm.execute(ref_host, in->rev, in->msg, code.data(), code.size());
     const auto ref_status = check_and_normalize(ref_res.status_code);
+    if (ref_status == EVMC_FAILURE)
+        ASSERT_EQ(ref_res.gas_left, 0);
 
     for (auto& vm : external_vms)
     {
-        const auto res = vm.execute(ctx2, in->rev, in->msg, code.data(), code.size());
+        const auto res = vm.execute(host, in->rev, in->msg, code.data(), code.size());
 
         const auto status = check_and_normalize(res.status_code);
         ASSERT_EQ(status, ref_status);
@@ -314,33 +309,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
 
         if (ref_status != EVMC_FAILURE)
         {
-            if (ctx1.recorded_calls.size() != ctx2.recorded_calls.size())
-                __builtin_trap();
+            ASSERT_EQ(ref_host.recorded_calls.size(), host.recorded_calls.size());
 
-            for (size_t i = 0; i < ctx1.recorded_calls.size(); ++i)
+            for (size_t i = 0; i < ref_host.recorded_calls.size(); ++i)
             {
-                const auto& m1 = ctx1.recorded_calls[i];
-                const auto& m2 = ctx2.recorded_calls[i];
+                const auto& m1 = ref_host.recorded_calls[i];
+                const auto& m2 = host.recorded_calls[i];
 
-                // TODO: Finish calls inspection.
                 ASSERT_EQ(m1.kind, m2.kind);
-                ASSERT_EQ(m1.depth, m2.depth);
                 ASSERT_EQ(m1.flags, m2.flags);
+                ASSERT_EQ(m1.depth, m2.depth);
                 ASSERT_EQ(m1.gas, m2.gas);
                 ASSERT_EQ(m1.destination, m2.destination);
                 ASSERT_EQ(m1.sender, m2.sender);
-
-                if (!(ctx1.recorded_calls[i] == ctx2.recorded_calls[i]))
-                {
-                    std::cerr << "recorded call [" << i << "]:\n";
-
-                    __builtin_trap();
-                }
+                ASSERT_EQ(bytes_view(m1.input_data, m1.input_size),
+                    bytes_view(m2.input_data, m2.input_size));
+                ASSERT_EQ(m1.value, m2.value);
+                ASSERT_EQ(m1.create2_salt, m2.create2_salt);
             }
 
-            if (!std::equal(ctx1.recorded_logs.begin(), ctx1.recorded_logs.end(),
-                    ctx2.recorded_logs.begin()))
-                __builtin_trap();
+            ASSERT(std::equal(ref_host.recorded_logs.begin(), ref_host.recorded_logs.end(),
+                host.recorded_logs.begin()));
 
             // TODO: Compare account access.
             // TODO: Compare blockhash.
