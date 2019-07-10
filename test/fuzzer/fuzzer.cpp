@@ -8,6 +8,7 @@
 #include <intx/intx.hpp>
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
+#include <test/utils/bytecode.hpp>
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
@@ -292,9 +293,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     {
         std::cout << "rev: " << int{in->rev} << "\n";
         std::cout << "code: " << to_hex(code) << "\n";
+        std::cout << "decoded: " << decode(code, in->rev) << "\n";
         std::cout << "input: " << to_hex({in->msg.input_data, in->msg.input_size}) << "\n";
         std::cout << "account: " << hex(in->msg.destination) << "\n";
         std::cout << "caller: " << hex(in->msg.sender) << "\n";
+        std::cout << "value: " << in->msg.value << "\n";
+        std::cout << "gas: " << in->msg.gas << "\n";
+        std::cout << "balance: " << in->host.accounts[in->msg.destination].balance << "\n";
+        std::cout << "coinbase: " << in->host.tx_context.block_coinbase << "\n";
+        std::cout << "difficulty: " << in->host.tx_context.block_difficulty << "\n";
+        std::cout << "timestamp: " << in->host.tx_context.block_timestamp << "\n";
     }
 
     const auto ref_res = ref_vm.execute(ctx1, in->rev, in->msg, code.data(), code.size());
