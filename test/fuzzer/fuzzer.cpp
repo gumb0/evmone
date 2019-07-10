@@ -6,31 +6,32 @@
 
 #include <evmc/instructions.h>
 #include <intx/intx.hpp>
+#include <test/utils/bytecode.hpp>
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
-#include <test/utils/bytecode.hpp>
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <optional>
 
 
-std::ostream& operator<<(std::ostream& os, const evmc_address& addr)
+inline std::ostream& operator<<(std::ostream& os, const evmc_address& addr)
 {
     return os << to_hex({addr.bytes, sizeof(addr.bytes)});
 }
 
-std::ostream& operator<<(std::ostream& os, const evmc_bytes32& v)
+inline std::ostream& operator<<(std::ostream& os, const evmc_bytes32& v)
 {
     return os << to_hex({v.bytes, sizeof(v.bytes)});
 }
 
-std::ostream& operator<<(std::ostream& os, const bytes_view& v)
+inline std::ostream& operator<<(std::ostream& os, const bytes_view& v)
 {
     return os << to_hex(v);
 }
 
-inline void assert_true(bool cond, const char* cond_str, const char* file, int line)
+[[clang::always_inline]] inline void assert_true(
+    bool cond, const char* cond_str, const char* file, int line)
 {
     if (!cond)
     {
@@ -106,7 +107,7 @@ struct evm_input
     FuzzHost host;
 };
 
-evmc_uint256be generate_interesting_value(uint8_t b) noexcept
+inline evmc_uint256be generate_interesting_value(uint8_t b) noexcept
 {
     const auto s = (b >> 6) & 0b11;
     const auto fill = (b >> 5) & 0b1;
@@ -131,7 +132,7 @@ evmc_uint256be generate_interesting_value(uint8_t b) noexcept
     return z;
 }
 
-evmc_address generate_interesting_address(uint8_t b) noexcept
+inline evmc_address generate_interesting_address(uint8_t b) noexcept
 {
     const auto s = (b >> 6) & 0b11;
     const auto fill = (b >> 5) & 0b1;
@@ -247,12 +248,12 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     return in;
 }
 
-auto hex(const evmc_address& addr) noexcept
+inline auto hex(const evmc_address& addr) noexcept
 {
     return to_hex({addr.bytes, sizeof(addr)});
 }
 
-bool operator==(const evmc_message& m1, const evmc_message& m2) noexcept
+inline bool operator==(const evmc_message& m1, const evmc_message& m2) noexcept
 {
     return m1.kind == m2.kind && m1.destination == m2.destination && m1.sender == m2.sender &&
            m1.gas == m2.gas && m1.flags == m2.flags && /* FIXME: m1.depth == m2.depth && */
@@ -260,13 +261,13 @@ bool operator==(const evmc_message& m1, const evmc_message& m2) noexcept
            bytes_view{m1.input_data, m1.input_size} == bytes_view{m2.input_data, m2.input_size};
 }
 
-bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& l2) noexcept
+inline bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& l2) noexcept
 {
     return l1.address == l2.address && l1.data == l2.data &&
            std::equal(l1.topics.begin(), l1.topics.end(), l2.topics.begin());
 }
 
-evmc_status_code check_and_normalize(evmc_status_code status) noexcept
+inline evmc_status_code check_and_normalize(evmc_status_code status) noexcept
 {
     ASSERT(status >= 0);
     return status <= EVMC_REVERT ? status : EVMC_FAILURE;
