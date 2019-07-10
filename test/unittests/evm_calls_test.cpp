@@ -407,6 +407,42 @@ TEST_F(evm, call_oog_after_depth_check)
     EXPECT_EQ(result.status_code, EVMC_OUT_OF_GAS);
 }
 
+TEST_F(evm, call_wrong_stipend)
+{
+    rev = EVMC_CONSTANTINOPLE;
+
+    tx_context.block_timestamp = -1;
+
+    const auto orig_code = bytecode{
+        "69d145ff031101dd4100414141414144588080804261644a756d70797e03d280d256ca80808080808031084465"
+        "7374696e6174696f6e456666666666663f60808008080a665903581c36030a0a0a"};
+
+    const auto code = bytecode{} + OP_PUSH10 + "d145ff031101dd410041" + OP_COINBASE + OP_COINBASE +
+                      OP_COINBASE + OP_COINBASE + OP_DIFFICULTY + OP_PC + OP_DUP1 + OP_DUP1 +
+                      OP_DUP1 + OP_TIMESTAMP + OP_PUSH2 + "644a" + OP_PUSH22 +
+                      "6d70797e03d280d256ca808080808080310844657374" + OP_PUSH10 +
+                      "6e6174696f6e45666666" + OP_PUSH7 + "66663f60808008" + OP_ADDMOD + OP_EXP +
+                      OP_PUSH7 + "5903581c36030a" + OP_EXP + OP_EXP;
+
+    ASSERT_EQ(code, orig_code);
+
+    execute(247371, code);
+
+    EXPECT_GAS_USED(EVMC_SUCCESS, 1);
+}
+
+TEST_F(evm, UB)
+{
+    const auto code = bytecode{
+        "5bc64b0072747469d145ff031101dd4100414141414144588080804261644a756d70797e03d280d256ca808080"
+        "808080310844657374696e6174696f6e456666666666663f60808008080a665903581c36030a0a0a0808581b08"
+        "6606"};
+
+    execute(code);
+
+    EXPECT_GAS_USED(EVMC_SUCCESS, 1);
+}
+
 TEST_F(evm, create_oog_after)
 {
     rev = EVMC_CONSTANTINOPLE;
