@@ -30,7 +30,6 @@ if(NOT EVMONE_FUZZING_COVERAGE)
         GIT_TAG aleth-interpreter
         GIT_SUBMODULES evmc cmake/cable
         GIT_SHALLOW TRUE
-        UPDATE_DISCONNECTED TRUE
 
         CMAKE_ARGS
             -DCMAKE_BUILD_TYPE=Release
