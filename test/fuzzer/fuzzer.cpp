@@ -39,6 +39,31 @@ static auto aleth = evmc::vm{evmc_create_interpreter()};
 
 class FuzzHost : public MockedHost
 {
+public:
+    uint8_t gas_left_factor = 0;
+
+    evmc::result call(const evmc_message& msg) noexcept override
+    {
+        auto result = MockedHost::call(msg);
+
+        // Set gas_left.
+        if (gas_left_factor == 0)
+            result.gas_left = 0;
+        else if (gas_left_factor == 1)
+            result.gas_left = msg.gas;
+        else
+            result.gas_left = msg.gas / (gas_left_factor + 3);
+
+        if (msg.kind == EVMC_CREATE || msg.kind == EVMC_CREATE2)
+        {
+            // Use the output to fill the create address.
+            // We still keep the output to check if VM is going to ignore it.
+            std::memcpy(result.create_address.bytes, result.output_data,
+                std::min(sizeof(result.create_address), result.output_size));
+        }
+
+        return result;
+    }
 };
 
 
@@ -99,6 +124,26 @@ evmc_address generate_interesting_address(uint8_t b) noexcept
     return z;
 }
 
+/// Creates the block number value from 8-bit value.
+/// The result is still quite small because block number affects blockhash().
+inline int expand_block_number(uint8_t x) noexcept
+{
+    return x * 97;
+}
+
+inline int64_t expand_block_timestamp(uint8_t x) noexcept
+{
+    switch (x)
+    {
+    case 255:
+        return -1;
+    case 254:
+        return std::numeric_limits<int64_t>::max();
+    default:
+        return int64_t{16777619} * x;
+    }
+}
+
 std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
 {
     constexpr auto required_size = 7;
@@ -134,7 +179,7 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     data += in.msg.input_size;
     data_size -= in.msg.input_size;
 
-    constexpr auto host_required_size = 8;
+    constexpr auto host_required_size = 9;
     if (data_size < host_required_size)
         return {};
 
@@ -146,11 +191,13 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     const auto account_storage_key1_8bit = data[5];
     const auto account_storage_key2_8bit = data[6];
     const auto account_codehash_8bit = data[7];
+    const auto call_result_status_4bit = data[8] >> 4;
+    const auto call_result_gas_left_factor_4bit = data[8] & 0x0f;
 
     in.host.tx_context.tx_gas_price = generate_interesting_value(gas_price_8bit);
     in.host.tx_context.tx_origin = generate_interesting_address(tx_origin_8bit);
-    in.host.tx_context.block_number = block_number_8bit;        // TODO: Expand to 32 bits.
-    in.host.tx_context.block_timestamp = block_timestamp_8bit;  // TODO: Expand to 63 bits.
+    in.host.tx_context.block_number = expand_block_number(block_number_8bit);
+    in.host.tx_context.block_timestamp = expand_block_timestamp(block_timestamp_8bit);
 
     auto& account = in.host.accounts[in.msg.destination];
     account.balance = generate_interesting_value(account_balance_8bit);
@@ -162,7 +209,12 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     account.codehash = generate_interesting_value(account_codehash_8bit);
     account.code = {data, data_size};
 
-    // FIXME: Add call result. Reuse input for output.
+    // Reuse the same buffer as for input.
+    // TODO: We can trim it.
+    in.host.call_result.status_code = static_cast<evmc_status_code>(call_result_status_4bit);
+    in.host.gas_left_factor = call_result_gas_left_factor_4bit;
+    in.host.call_result.output_data = in.msg.input_data;
+    in.host.call_result.output_size = in.msg.input_size;
 
     return in;
 }

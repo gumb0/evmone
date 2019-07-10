@@ -64,7 +64,7 @@ public:
     };
     std::vector<log_record> recorded_logs;
 
-private:
+protected:
     std::deque<bytes> m_recorded_calls_inputs;
 
     bool account_exists(const evmc_address& addr) noexcept override
