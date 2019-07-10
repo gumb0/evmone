@@ -21,7 +21,7 @@ if(NOT EVMONE_FUZZING_COVERAGE)
     # TODO: Aleth reports undefined behaviors, disable it for fuzzing.
     string(REPLACE undefined "" aleth_fuzzing_flags ${fuzzing_flags})
 
-    set(aleth_git_tag master)
+    set(aleth_git_tag aleth-interpreter)
     if(NOT aleth_git_tag STREQUAL "${aleth_current_git_tag}")
         message(STATUS "Aleth git tag has changed: ${aleth_current_git_tag} -> ${aleth_git_tag}")
         set(aleth_current_git_tag ${aleth_git_tag} CACHE INTERNAL "Current Aleth git tag" FORCE)

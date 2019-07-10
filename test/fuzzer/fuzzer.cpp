@@ -165,15 +165,8 @@ inline int expand_block_number(uint8_t x) noexcept
 
 inline int64_t expand_block_timestamp(uint8_t x) noexcept
 {
-    switch (x)
-    {
-    case 255:
-        return -1;
-    case 254:
-        return std::numeric_limits<int64_t>::max();
-    default:
-        return int64_t{16777619} * x;
-    }
+    // TODO: If timestamp is -1 Aleth and evmone disagrees how to covert it to uint256.
+    return x < 255 ? int64_t{16777619} * x : std::numeric_limits<int64_t>::max();
 }
 
 std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
