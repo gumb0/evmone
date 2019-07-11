@@ -253,12 +253,6 @@ inline auto hex(const evmc_address& addr) noexcept
     return to_hex({addr.bytes, sizeof(addr)});
 }
 
-inline bool operator==(const MockedHost::log_record& l1, const MockedHost::log_record& l2) noexcept
-{
-    return l1.address == l2.address && l1.data == l2.data &&
-           std::equal(l1.topics.begin(), l1.topics.end(), l2.topics.begin());
-}
-
 inline evmc_status_code check_and_normalize(evmc_status_code status) noexcept
 {
     ASSERT(status >= 0);
@@ -329,11 +323,21 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
             }
 
             ASSERT(std::equal(ref_host.recorded_logs.begin(), ref_host.recorded_logs.end(),
-                host.recorded_logs.begin()));
+                host.recorded_logs.begin(), host.recorded_logs.end()));
 
-            // TODO: Compare account access.
-            // TODO: Compare blockhash.
-            // TODO: Compare selfdestructs.
+            ASSERT(std::equal(ref_host.recorded_blockhashes.begin(),
+                ref_host.recorded_blockhashes.end(), host.recorded_blockhashes.begin(),
+                host.recorded_blockhashes.end()));
+
+            ASSERT(std::equal(ref_host.recorded_selfdestructs.begin(),
+                ref_host.recorded_selfdestructs.end(), host.recorded_selfdestructs.begin(),
+                host.recorded_selfdestructs.end()));
+
+            // TODO: Enable account accesses check. Currently this is not possible because Aleth
+            //       is doing additional unnecessary account existence checks in calls.
+            // ASSERT(std::equal(ref_host.recorded_account_accesses.begin(),
+            //     ref_host.recorded_account_accesses.end(), host.recorded_account_accesses.begin(),
+            //     host.recorded_account_accesses.end()));
         }
     }
 
