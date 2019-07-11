@@ -11,7 +11,6 @@
 #include <test/utils/utils.hpp>
 #include <algorithm>
 #include <iostream>
-#include <optional>
 
 
 inline std::ostream& operator<<(std::ostream& os, const evmc_address& addr)
@@ -99,11 +98,16 @@ public:
 };
 
 
-struct evm_input
+struct fuzz_input
 {
-    evmc_revision rev;
-    evmc_message msg;
+    evmc_revision rev{};
+    evmc_message msg{};
     FuzzHost host;
+
+    /// Creates invalid input.
+    fuzz_input() noexcept { msg.gas = -1; }
+
+    explicit operator bool() const noexcept { return msg.gas != -1; }
 };
 
 inline evmc_uint256be generate_interesting_value(uint8_t b) noexcept
@@ -181,12 +185,13 @@ inline int64_t expand_block_gas_limit(uint8_t x) noexcept
     return x == 0 ? 0 : std::numeric_limits<int64_t>::max() / x;
 }
 
-// TODO: Get rid of optional.
-std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
+fuzz_input populate_input(const uint8_t* data, size_t data_size) noexcept
 {
+    auto in = fuzz_input{};
+
     constexpr auto min_required_size = 23;
     if (data_size < min_required_size)
-        return {};
+        return in;
 
     const auto rev_4bits = data[0] >> 4;
     const auto kind_1bit = (data[0] >> 3) & 0b1;
@@ -220,10 +225,7 @@ std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) n
     data_size -= min_required_size;
 
     if (data_size < input_size_16bits)  // Not enough data for input.
-        return {};
-
-
-    auto in = evm_input{};
+        return in;
 
     in.rev = rev_4bits > EVMC_PETERSBURG ? EVMC_PETERSBURG : static_cast<evmc_revision>(rev_4bits);
 
@@ -291,35 +293,35 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t data_size) noe
     if (!in)
         return 0;
 
-    auto& ref_host = in->host;
-    const auto& code = ref_host.accounts[in->msg.destination].code;
+    auto& ref_host = in.host;
+    const auto& code = ref_host.accounts[in.msg.destination].code;
 
     auto host = ref_host;  // Copy Host.
 
     if (print_input)
     {
-        std::cout << "rev: " << int{in->rev} << "\n";
+        std::cout << "rev: " << int{in.rev} << "\n";
         std::cout << "code: " << to_hex(code) << "\n";
-        std::cout << "decoded: " << decode(code, in->rev) << "\n";
-        std::cout << "input: " << to_hex({in->msg.input_data, in->msg.input_size}) << "\n";
-        std::cout << "account: " << hex(in->msg.destination) << "\n";
-        std::cout << "caller: " << hex(in->msg.sender) << "\n";
-        std::cout << "value: " << in->msg.value << "\n";
-        std::cout << "gas: " << in->msg.gas << "\n";
-        std::cout << "balance: " << in->host.accounts[in->msg.destination].balance << "\n";
-        std::cout << "coinbase: " << in->host.tx_context.block_coinbase << "\n";
-        std::cout << "difficulty: " << in->host.tx_context.block_difficulty << "\n";
-        std::cout << "timestamp: " << in->host.tx_context.block_timestamp << "\n";
+        std::cout << "decoded: " << decode(code, in.rev) << "\n";
+        std::cout << "input: " << to_hex({in.msg.input_data, in.msg.input_size}) << "\n";
+        std::cout << "account: " << hex(in.msg.destination) << "\n";
+        std::cout << "caller: " << hex(in.msg.sender) << "\n";
+        std::cout << "value: " << in.msg.value << "\n";
+        std::cout << "gas: " << in.msg.gas << "\n";
+        std::cout << "balance: " << in.host.accounts[in.msg.destination].balance << "\n";
+        std::cout << "coinbase: " << in.host.tx_context.block_coinbase << "\n";
+        std::cout << "difficulty: " << in.host.tx_context.block_difficulty << "\n";
+        std::cout << "timestamp: " << in.host.tx_context.block_timestamp << "\n";
     }
 
-    const auto ref_res = ref_vm.execute(ref_host, in->rev, in->msg, code.data(), code.size());
+    const auto ref_res = ref_vm.execute(ref_host, in.rev, in.msg, code.data(), code.size());
     const auto ref_status = check_and_normalize(ref_res.status_code);
     if (ref_status == EVMC_FAILURE)
         ASSERT_EQ(ref_res.gas_left, 0);
 
     for (auto& vm : external_vms)
     {
-        const auto res = vm.execute(host, in->rev, in->msg, code.data(), code.size());
+        const auto res = vm.execute(host, in.rev, in.msg, code.data(), code.size());
 
         const auto status = check_and_normalize(res.status_code);
         ASSERT_EQ(status, ref_status);
