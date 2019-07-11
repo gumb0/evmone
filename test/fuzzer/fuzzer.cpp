@@ -10,7 +10,6 @@
 #include <test/utils/host_mock.hpp>
 #include <test/utils/utils.hpp>
 #include <algorithm>
-#include <iomanip>
 #include <iostream>
 #include <optional>
 
@@ -157,6 +156,13 @@ inline evmc_address generate_interesting_address(uint8_t b) noexcept
     return z;
 }
 
+inline int generate_depth(uint8_t x_2bits) noexcept
+{
+    const auto h = (x_2bits >> 1) & 0b1;
+    const auto l = x_2bits & 0b1;
+    return 1023 * h + l;  // 0, 1, 1023, 1024.
+}
+
 /// Creates the block number value from 8-bit value.
 /// The result is still quite small because block number affects blockhash().
 inline int expand_block_number(uint8_t x) noexcept
@@ -170,80 +176,100 @@ inline int64_t expand_block_timestamp(uint8_t x) noexcept
     return x < 255 ? int64_t{16777619} * x : std::numeric_limits<int64_t>::max();
 }
 
+inline int64_t expand_block_gas_limit(uint8_t x) noexcept
+{
+    return x == 0 ? 0 : std::numeric_limits<int64_t>::max() / x;
+}
+
+// TODO: Get rid of optional.
 std::optional<evm_input> populate_input(const uint8_t* data, size_t data_size) noexcept
 {
-    // TODO: Move constant bytes up front, the input buffer after.
-    //
-
-    constexpr auto required_size = 7;
-    if (data_size < required_size)
+    constexpr auto min_required_size = 23;
+    if (data_size < min_required_size)
         return {};
+
+    const auto rev_4bits = data[0] >> 4;
+    const auto kind_1bit = (data[0] >> 3) & 0b1;
+    const auto static_1bit = (data[0] >> 2) & 0b1;
+    const auto depth_2bits = data[0] & 0b11;
+    const auto gas_24bits = (data[1] << 16) | (data[2] << 8) | data[3];  // Max 16777216.
+    const auto input_size_16bits = unsigned(data[4] << 8) | data[5];
+    const auto destination_8bits = data[6];
+    const auto sender_8bits = data[7];
+    const auto value_8bits = data[8];
+    const auto create2_salt_8bits = data[9];
+
+    const auto tx_gas_price_8bits = data[10];
+    const auto tx_origin_8bits = data[11];
+    const auto block_coinbase_8bits = data[12];
+    const auto block_number_8bits = data[13];
+    const auto block_timestamp_8bits = data[14];
+    const auto block_gas_limit_8bits = data[15];
+    const auto block_difficulty_8bits = data[16];
+
+    const auto account_balance_8bits = data[17];
+    const auto account_storage_key1_8bits = data[18];
+    const auto account_storage_key2_8bits = data[19];
+    const auto account_codehash_8bits = data[20];
+    // TODO: Add another account?
+
+    const auto call_result_status_4bits = data[21] >> 4;
+    const auto call_result_gas_left_factor_4bits = data[22] & 0b1111;
+
+    data += min_required_size;
+    data_size -= min_required_size;
+
+    if (data_size < input_size_16bits)  // Not enough data for input.
+        return {};
+
 
     auto in = evm_input{};
-    const auto rev_4bits = data[0] >> 4;
-    const auto static_1bit = (data[0] >> 3) & 0b1;
-    const auto depth_1bit = (data[0] >> 2) & 0b1;
-    const auto gas_18bits = ((data[0] & 0b11) << 16) | (data[1] << 8) | data[2];  // Max 262143.
-    const auto input_size_8bits = data[3];
-    const auto destination_8bits = data[4];
-    const auto sender_8bits = data[5];
-    const auto value_8bits = data[6];
 
-    data += required_size;
-    data_size -= required_size;
+    in.rev = rev_4bits > EVMC_PETERSBURG ? EVMC_PETERSBURG : static_cast<evmc_revision>(rev_4bits);
 
-    if (data_size < input_size_8bits)  // Not enough data for input.
-        return {};
+    // The message king should not matter but this 1 bit was free.
+    in.msg.kind = kind_1bit ? EVMC_CREATE : EVMC_CALL;
 
-    in.rev = rev_4bits > EVMC_PETERSBURG ? EVMC_PETERSBURG : evmc_revision(rev_4bits);
     in.msg.flags = static_1bit ? EVMC_STATIC : 0;
-    in.msg.depth = depth_1bit ? 0 : 1024;
-    in.msg.gas = gas_18bits;
-    in.msg.input_size = input_size_8bits;
-    in.msg.input_data = data;
+    in.msg.depth = generate_depth(depth_2bits);
+    in.msg.gas = gas_24bits;
     in.msg.destination = generate_interesting_address(destination_8bits);
     in.msg.sender = generate_interesting_address(sender_8bits);
+    in.msg.input_size = input_size_16bits;
+    in.msg.input_data = data;
     in.msg.value = generate_interesting_value(value_8bits);
+
+    // Should be ignored by VMs.
+    in.msg.create2_salt = generate_interesting_value(create2_salt_8bits);
 
     data += in.msg.input_size;
     data_size -= in.msg.input_size;
 
-    constexpr auto host_required_size = 9;
-    if (data_size < host_required_size)
-        return {};
-
-    const auto gas_price_8bit = data[0];
-    const auto tx_origin_8bit = data[1];
-    const auto block_number_8bit = data[2];
-    const auto block_timestamp_8bit = data[3];
-    const auto account_balance_8bit = data[4];
-    const auto account_storage_key1_8bit = data[5];
-    const auto account_storage_key2_8bit = data[6];
-    const auto account_codehash_8bit = data[7];
-    const auto call_result_status_4bit = data[8] >> 4;
-    const auto call_result_gas_left_factor_4bit = data[8] & 0x0f;
-
-    in.host.tx_context.tx_gas_price = generate_interesting_value(gas_price_8bit);
-    in.host.tx_context.tx_origin = generate_interesting_address(tx_origin_8bit);
-    in.host.tx_context.block_number = expand_block_number(block_number_8bit);
-    in.host.tx_context.block_timestamp = expand_block_timestamp(block_timestamp_8bit);
+    in.host.tx_context.tx_gas_price = generate_interesting_value(tx_gas_price_8bits);
+    in.host.tx_context.tx_origin = generate_interesting_address(tx_origin_8bits);
+    in.host.tx_context.block_coinbase = generate_interesting_address(block_coinbase_8bits);
+    in.host.tx_context.block_number = expand_block_number(block_number_8bits);
+    in.host.tx_context.block_timestamp = expand_block_timestamp(block_timestamp_8bits);
+    in.host.tx_context.block_gas_limit = expand_block_gas_limit(block_gas_limit_8bits);
+    in.host.tx_context.block_difficulty = generate_interesting_value(block_difficulty_8bits);
 
     auto& account = in.host.accounts[in.msg.destination];
-    account.balance = generate_interesting_value(account_balance_8bit);
-    const auto storage_key1 = generate_interesting_value(account_storage_key1_8bit);
-    const auto storage_key2 = generate_interesting_value(account_storage_key2_8bit);
+    account.balance = generate_interesting_value(account_balance_8bits);
+    const auto storage_key1 = generate_interesting_value(account_storage_key1_8bits);
+    const auto storage_key2 = generate_interesting_value(account_storage_key2_8bits);
     account.storage[{}] = storage_key2;
     account.storage[storage_key1] = storage_key2;
     account.storage[storage_key2] = storage_key1;
-    account.codehash = generate_interesting_value(account_codehash_8bit);
-    account.code = {data, data_size};
+    account.codehash = generate_interesting_value(account_codehash_8bits);
+    account.code = {data, data_size};  // Use remaining data as code.
 
-    // Reuse the same buffer as for input.
-    // TODO: We can trim it.
-    in.host.call_result.status_code = static_cast<evmc_status_code>(call_result_status_4bit);
-    in.host.gas_left_factor = call_result_gas_left_factor_4bit;
-    in.host.call_result.output_data = in.msg.input_data;
-    in.host.call_result.output_size = in.msg.input_size;
+    in.host.call_result.status_code = static_cast<evmc_status_code>(call_result_status_4bits);
+    in.host.gas_left_factor = call_result_gas_left_factor_4bits;
+
+    // Use 3/5 of the input from the and as the potential call output.
+    const auto offset = in.msg.input_size * 2 / 5;
+    in.host.call_result.output_data = &in.msg.input_data[offset];
+    in.host.call_result.output_size = in.msg.input_size - offset;
 
     return in;
 }
